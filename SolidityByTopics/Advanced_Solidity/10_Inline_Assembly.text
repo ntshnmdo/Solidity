@@ -1,0 +1,280 @@
+This is where you start interacting directly with the EVM, bypassing some Solidity abstractions.
+
+We'll cover:
+
+What Inline Assembly is
+
+What Yul is
+
+Why developers use it
+
+Memory operations
+
+Storage operations
+
+Practice code for Remix
+
+Risks
+
+1️⃣ What is Inline Assembly?
+
+Inline Assembly lets you write low-level EVM instructions inside Solidity.
+
+Example:
+
+assembly {
+    // EVM instructions
+}
+
+Inside assembly {} you can use Yul language, which compiles directly to EVM opcodes.
+
+Think of it like:
+
+Solidity → high-level language
+Yul → low-level intermediate language
+EVM → machine
+2️⃣ What is Yul?
+
+Yul is a low-level language designed for Ethereum.
+
+It sits between:
+
+Solidity → Yul → EVM bytecode
+
+Example Yul code:
+
+assembly {
+    let x := 5
+    let y := 10
+    let result := add(x, y)
+}
+
+This compiles almost directly to EVM instructions.
+
+3️⃣ Why Use Inline Assembly?
+
+Most of the time you should NOT use it.
+
+But it is useful for:
+
+Gas optimization
+
+Sometimes assembly uses fewer opcodes.
+
+Low-level operations
+
+reading raw calldata
+
+custom encoding
+
+proxies
+
+delegatecall forwarding
+
+Memory manipulation
+DeFi protocols
+
+Many optimized libraries use assembly (Uniswap, OpenZeppelin).
+
+4️⃣ Memory vs Storage (Important)
+
+Before writing assembly, understand this.
+
+Type	Description
+storage	permanent blockchain storage
+memory	temporary during function execution
+stack	EVM internal computation stack
+
+Assembly can interact directly with memory and storage slots.
+
+5️⃣ Memory Operations
+
+Memory is like RAM.
+
+You access it with:
+
+mstore
+mload
+Example: Memory Write & Read
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract MemoryExample {
+
+    function testMemory() public pure returns (uint) {
+
+        uint result;
+
+        assembly {
+
+            let ptr := mload(0x40)
+
+            mstore(ptr, 7)
+
+            result := mload(ptr)
+        }
+
+        return result;
+    }
+}
+
+Explanation:
+
+mload(0x40) → free memory pointer
+mstore(ptr,7) → store value in memory
+mload(ptr) → read value
+6️⃣ Storage Operations
+
+Storage is permanent.
+
+Assembly uses:
+
+sstore
+sload
+Example: Storage Read/Write
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract StorageExample {
+
+    uint public value;
+
+    function setValue(uint _value) public {
+
+        assembly {
+
+            sstore(value.slot, _value)
+
+        }
+    }
+
+    function getValue() public view returns(uint result) {
+
+        assembly {
+
+            result := sload(value.slot)
+
+        }
+    }
+}
+
+Explanation:
+
+sstore(slot,value)
+sload(slot)
+
+You directly manipulate storage slots.
+
+7️⃣ Stack Operations
+
+EVM works on a stack machine.
+
+Example:
+
+assembly {
+
+    let a := 3
+    let b := 5
+
+    let c := add(a,b)
+
+}
+
+add is an EVM opcode.
+
+Other common opcodes:
+
+add
+sub
+mul
+div
+lt
+gt
+eq
+and
+or
+8️⃣ Reading msg.sender in Assembly
+assembly {
+
+    let sender := caller()
+
+}
+
+Equivalent to:
+
+msg.sender
+9️⃣ Reading calldata
+
+Example:
+
+assembly {
+
+    let data := calldataload(4)
+
+}
+
+Used in:
+
+proxy forwarding
+
+ABI decoding
+
+🔟 Return Values in Assembly
+assembly {
+
+    mstore(0x00, 5)
+
+    return(0x00, 32)
+
+}
+
+Return value 5.
+
+1️⃣2️⃣ When Protocols Use Assembly
+
+Inline assembly is used in:
+
+Uniswap V3
+
+Solmate
+
+OpenZeppelin proxies
+
+Gas optimized libraries
+
+Common cases:
+
+proxy delegatecall
+abi encoding
+memory packing
+loop optimization
+⚠️ Risks of Inline Assembly
+
+Assembly bypasses Solidity safety checks.
+
+Possible issues:
+
+Storage corruption
+
+Wrong slot = broken contract.
+
+Memory overwrite
+
+Overwriting free memory pointer.
+
+Security vulnerabilities
+
+Incorrect low-level logic.
+
+Hard to audit
+
+Assembly is difficult to read.
+
+🔎 Quick Comparison
+| Solidity         | Assembly       |
+| ---------------- | -------------- |
+| High level       | Low level      |
+| Safe             | Unsafe         |
+| Easier to read   | Harder         |
+| Automatic checks | Manual control |
+| Slower sometimes | Gas optimized  |

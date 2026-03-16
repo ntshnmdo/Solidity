@@ -1,0 +1,312 @@
+# 🔐 Reentrancy (Security in Solidity)
+
+## 1️⃣ What is Reentrancy?
+
+Reentrancy happens when a contract:
+
+1. Sends ETH or calls another contract.
+2. The receiving contract calls back **before the first function finishes**.
+3. State hasn’t been updated yet → attacker exploits it.
+
+Simplified flow:
+
+```
+Victim.withdraw()
+    ↓
+send ETH to attacker
+    ↓
+attacker fallback() calls withdraw() again
+    ↓
+state not updated → funds drained
+```
+
+---
+
+# 2️⃣ Classic Vulnerable Example
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract Vulnerable {
+
+    mapping(address => uint) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw() public {
+
+        uint amount = balances[msg.sender];
+
+        require(amount > 0);
+
+        (bool success,) = msg.sender.call{value: amount}("");
+        require(success);
+
+        balances[msg.sender] = 0;
+    }
+}
+```
+
+### Problem
+
+```
+external call → state update happens AFTER
+```
+
+Attacker can reenter before `balances[msg.sender] = 0`.
+
+---
+
+# 3️⃣ CEI Pattern (Checks → Effects → Interactions)
+
+CEI is the **most important rule** against reentrancy.
+
+Order must always be:
+
+```
+1. Checks
+2. Effects
+3. Interactions
+```
+
+---
+
+## Safe Version
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract SafeCEI {
+
+    mapping(address => uint) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw() public {
+
+        uint amount = balances[msg.sender];
+
+        require(amount > 0);
+
+        balances[msg.sender] = 0; // EFFECT first
+
+        (bool success,) = msg.sender.call{value: amount}(""); // interaction
+        require(success);
+    }
+}
+```
+
+Now reentrancy fails because balance becomes **0 before external call**.
+
+---
+
+# 4️⃣ Reentrancy Guard (Lock Pattern)
+
+Another defense is a **mutex lock**.
+
+Example similar to OpenZeppelin's guard from OpenZeppelin.
+
+---
+
+## Example
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract ReentrancyGuardExample {
+
+    bool private locked;
+
+    modifier nonReentrant() {
+        require(!locked, "Reentrant call");
+        locked = true;
+        _;
+        locked = false;
+    }
+
+    mapping(address => uint) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw() public nonReentrant {
+
+        uint amount = balances[msg.sender];
+        require(amount > 0);
+
+        balances[msg.sender] = 0;
+
+        (bool success,) = msg.sender.call{value: amount}("");
+        require(success);
+    }
+}
+```
+
+Now reentrancy cannot happen because:
+
+```
+locked = true
+```
+
+prevents the second call.
+
+---
+
+# 5️⃣ Cross-Function Reentrancy
+
+Many developers miss this.
+
+Even if **withdraw() is protected**, attacker might reenter **another function**.
+
+---
+
+## Example
+
+```solidity
+contract CrossFunction {
+
+    mapping(address => uint) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw() public {
+
+        uint amount = balances[msg.sender];
+
+        (bool success,) = msg.sender.call{value: amount}("");
+        require(success);
+
+        balances[msg.sender] = 0;
+    }
+
+    function transfer(address to, uint amount) public {
+
+        require(balances[msg.sender] >= amount);
+
+        balances[msg.sender] -= amount;
+        balances[to] += amount;
+    }
+}
+```
+
+Attack:
+
+```
+withdraw()
+  ↓
+fallback()
+  ↓
+call transfer()
+```
+
+Balance still exists → exploit possible.
+
+---
+
+# 6️⃣ Modern Reentrancy Defense Strategy
+
+Best practice:
+
+### 1️⃣ CEI Pattern
+
+Always update state first.
+
+### 2️⃣ Reentrancy Guard
+
+Use `nonReentrant`.
+
+### 3️⃣ Pull Payments Pattern
+
+Users withdraw themselves instead of contract sending automatically.
+
+### 4️⃣ Avoid complex fallback logic
+
+### 5️⃣ Limit external calls
+
+---
+
+# 7️⃣ Real-World Reentrancy Attack Pattern
+
+Typical exploit contract:
+
+```solidity
+contract Attacker {
+
+    address victim;
+
+    constructor(address _victim) {
+        victim = _victim;
+    }
+
+    fallback() external payable {
+        if(address(victim).balance >= 1 ether) {
+            victim.call(abi.encodeWithSignature("withdraw()"));
+        }
+    }
+
+}
+```
+
+This loops withdrawals.
+
+---
+
+# 8️⃣ Types of Reentrancy
+
+| Type                 | Description                  |
+| -------------------- | ---------------------------- |
+| Single-function      | Same function reentered      |
+| Cross-function       | Different function exploited |
+| Cross-contract       | Multiple contracts involved  |
+| Read-only reentrancy | Manipulates view functions   |
+
+---
+
+# 9️⃣ Gas & Reentrancy
+
+Historically:
+
+```
+transfer()
+send()
+```
+
+limited gas to **2300**, reducing risk.
+
+But after gas cost changes (EIPs), modern best practice is:
+
+```
+call{value: amount}()
+```
+
+* CEI pattern.
+
+---
+
+# 🧠 Key Takeaways
+
+Reentrancy occurs when:
+
+```
+external call → attacker callback → state not updated
+```
+
+Prevent it using:
+
+1. **CEI pattern**
+2. **Reentrancy guards**
+3. **Pull payment model**
+4. **Minimal external calls**
+
+---
+
