@@ -10,6 +10,8 @@ contract AccessManager {
     bytes32 public constant MEDIATOR_ROLE = keccak256("MEDIATOR");
 
     // Role storage: roles[user][role] = true/ false
+    // mapping private ensures that only control functions like our role checking modifier,
+    // interact with it
     mapping(address => mapping(bytes32 => bool)) private roles;
 
     // Custom errors: Gas Efficient
